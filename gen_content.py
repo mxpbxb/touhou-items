@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.4.1"
+NS, VERSION = "thkaguyamod", "0.4.2"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -117,8 +117,9 @@ G = "grimoire:"  # a texture from Grimoire of Alice
 ITEMS = [
     # Held and let go: Master Spark.
     ("mini_hakkero", "miniHakkero", "Mini-Hakkero", "minecraft:paper", weapon(CHARGE)),
-    # Dropped by fairies and the other Touhou mobs; given to an Alice doll, it is favour.
-    ("point_item", "material/THPointItem", "Point Item", "minecraft:paper", POINT),
+    # Dropped by fairies and the other Touhou mobs, or made from Arcadian Dream's Max Point Items;
+    # given to an Alice doll, it is love.
+    ("point_item", "material/THPointItem", "Doll Point", "minecraft:paper", POINT),
     ("small_power_item", "material/SmallPowerUpItem", "Power Item", "minecraft:paper", POINT),
     ("big_power_item", "material/BigPowerUpItem", "Big Power Item", "minecraft:paper", POINT),
     ("extend_item", "material/ExtendItem", "Extend Item", "minecraft:paper", {"minecraft:max_stack_size": 16}),
@@ -206,6 +207,13 @@ for tag, members in {
 }.items():
     write(out / "data" / "minecraft" / "tags" / "item" / f"{tag}.json",
           {"replace": False, "values": [f"{NS}:{m}" for m in members]})
+
+# A Doll Point from four of Arcadian Dream's Max Point Items (the recipe does nothing without it).
+write(od / "recipe" / "point_item_from_max_point_items.json", {
+    "type": "minecraft:crafting_shapeless", "category": "misc",
+    "ingredients": ["arcadiandream:max_point_item"] * 4,
+    "result": {"id": f"{NS}:point_item"},
+})
 
 # The Mochi Hammer: Grimoire of Alice's shape, with two diamonds and a brick for its head.
 if grimoire is not None:

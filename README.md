@@ -36,7 +36,7 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
 - **Right-click:** the Homing and Diffusion Amulets, the Spiritual Strike Talisman, Yuyuko's Fan
   (butterflies), Kappa's Water Pistol, Sakuya's Stopwatch (time stops around you), the Ibuki Gourd
   (never runs dry), the Illness Recovery Charm.
-- **Point items:** Point, Power and Big Power, Full Power, Extend (an extra life), Bomb (strikes
+- **Point items:** the Doll Point (four of Arcadian Dream's Max Point Items make one), Power and Big Power, Full Power, Extend (an extra life), Bomb (strikes
   everything around), Star, Faith, Cherry, the UFOs and the Time Orb; the Heavenly Peach.
 - **Spell cards:** nine of the original's cards, each cast at what is in sight, for experience levels.
 
