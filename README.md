@@ -28,8 +28,8 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
   Spear the Gungnir (right-click: a line of light), Scythe of Death (right-click pulls, sneak pushes),
   the Hakurei and Wind Shrine Maiden Sticks (amulets; a gust), Yuuka's Parasol (float down while
   held), the Sacred Sword of Toyosatomimi and the Miracle Mallet (right-click: stronger for a while).
-- **Grimoire of Alice's weapons:** the **Mochi Hammer** (craftable: two bricks and an iron ingot on
-  two sticks; it sends what it hits flying), Momiji's Scimitar, the Sword of Kusanagi, Nue's
+- **Grimoire of Alice's weapons:** the **Mochi Hammer** (craftable: diamond, brick, diamond on two
+  sticks; it sends what it hits flying, and weighs you down while you hold it), Momiji's Scimitar, the Sword of Kusanagi, Nue's
   Trident, Elly's Scythe, Amenonuhoko, Nazrin's Dowsing Rod and the Shining Needle.
 - **Held and let go:** the Mini-Hakkero (Master Spark), Tengu's Fan (a gust), the Nuclear Control
   Rod (a sun of a shot, and its kick).

@@ -532,15 +532,15 @@ pub fn eaten(host: &mut dyn Host, item: &str, uuid: u128) {
     }
 }
 
-/// A tick of a carried stack: the Onbashira weighs down whoever holds it; Yuuka's Parasol lets them
-/// float down.
+/// A tick of a carried stack: the Onbashira and the Mochi Hammer weigh down whoever holds them;
+/// Yuuka's Parasol lets them float down.
 pub fn carried(host: &mut dyn Host, slot: i32, selected: bool) {
     if !selected {
         return;
     }
     let Some(item) = host.carried_stack(slot).map(|s| s.item.to_string()) else { return };
     let what = match short(&item) {
-        Some("onbashira") => "minecraft:slowness",
+        Some("onbashira" | "mochi_hammer") => "minecraft:slowness",
         Some("yuuka_parasol") => "minecraft:slow_falling",
         _ => return,
     };

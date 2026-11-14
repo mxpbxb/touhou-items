@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.4.0"
+NS, VERSION = "thkaguyamod", "0.4.1"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -207,12 +207,12 @@ for tag, members in {
     write(out / "data" / "minecraft" / "tags" / "item" / f"{tag}.json",
           {"replace": False, "values": [f"{NS}:{m}" for m in members]})
 
-# The Mochi Hammer is made as Grimoire of Alice made it, with iron for its Glorious Nippon Steel.
+# The Mochi Hammer: Grimoire of Alice's shape, with two diamonds and a brick for its head.
 if grimoire is not None:
     write(od / "recipe" / "mochi_hammer.json", {
         "type": "minecraft:crafting_shaped", "category": "equipment",
-        "pattern": ["BBI", " S ", " S "],
-        "key": {"B": "minecraft:brick", "I": "minecraft:iron_ingot", "S": "minecraft:stick"},
+        "pattern": ["DBD", " S ", " S "],
+        "key": {"D": "minecraft:diamond", "B": "minecraft:brick", "S": "minecraft:stick"},
         "result": {"id": f"{NS}:mochi_hammer"},
     })
 write(od / "horizon" / "creative_tab" / "items.json", {
