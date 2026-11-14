@@ -16,7 +16,7 @@ Install both from the release, then press Build in the launcher:
 - **`thkaguyamod`** (`.hmod`): the items, their textures, the creative tabs and the danmaku sheets.
 
 [Touhou Mobs](https://github.com/mxpbxb/touhou-mobs) drops the point and power items, and
-[Alice Dolls Restringed](https://github.com/mxpbxb/alice-dolls-restringed)'s dolls take them as favour.
+[Alice Dolls Restringed](https://github.com/mxpbxb/alice-dolls-restringed)'s dolls take them as love.
 
 ## The items
 
