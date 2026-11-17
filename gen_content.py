@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.4.3"
+NS, VERSION = "thkaguyamod", "0.4.4"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -162,7 +162,7 @@ ITEMS = [
     ("nuclear_control_rod", "nuclearControlRod", "Nuclear Control Rod", "minecraft:paper",
      weapon(dict(CHARGE, **{"minecraft:max_damage": 36}))),
     # Grimoire of Alice's weapons: its "goldyron" swords are 4 + 3, its others 4 (made a little stronger here).
-    ("mochi_hammer", G + "MochiHammer", "Mochi Hammer", "minecraft:iron_sword", weapon(sword(9, 1000, speed=-3.0))),
+    ("mochi_hammer", G + "MochiHammer", "Mochi Hammer", "minecraft:iron_sword", weapon(sword(11, 1000, speed=-3.0))),
     ("momiji_scimitar", G + "MomijisScimitarSword", "Momiji's Scimitar", "minecraft:iron_sword", weapon(sword(7, 1000))),
     ("sword_of_kusanagi", G + "SwordofKusanagi", "Sword of Kusanagi", "minecraft:iron_sword", weapon(sword(7, 1000, extra=LEAVES))),
     ("nue_trident", G + "NueTrident", "Nue's Trident", "minecraft:iron_sword", weapon(sword(6, 1000, speed=-2.8))),
@@ -215,12 +215,12 @@ write(od / "recipe" / "point_item_from_max_point_items.json", {
     "result": {"id": f"{NS}:point_item"},
 })
 
-# The Mochi Hammer: Grimoire of Alice's shape, with two diamonds and a brick for its head.
+# The Mochi Hammer: Grimoire of Alice's shape, with two diamonds and ancient debris for its head.
 if grimoire is not None:
     write(od / "recipe" / "mochi_hammer.json", {
         "type": "minecraft:crafting_shaped", "category": "equipment",
         "pattern": ["DBD", " S ", " S "],
-        "key": {"D": "minecraft:diamond", "B": "minecraft:brick", "S": "minecraft:stick"},
+        "key": {"D": "minecraft:diamond", "B": "minecraft:ancient_debris", "S": "minecraft:stick"},
         "result": {"id": f"{NS}:mochi_hammer"},
     })
 write(od / "horizon" / "creative_tab" / "items.json", {
