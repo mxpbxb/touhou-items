@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.4.4"
+NS, VERSION = "thkaguyamod", "0.5.0"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -223,8 +223,67 @@ if grimoire is not None:
         "key": {"D": "minecraft:diamond", "B": "minecraft:ancient_debris", "S": "minecraft:stick"},
         "result": {"id": f"{NS}:mochi_hammer"},
     })
+# ---- The Giga Torch and the Max Doll Point ----
+# The Giga Torch is Torchmaster's Mega Torch (by Xalcon, MIT: extra/LICENSE-Torchmaster.txt), with
+# its art; what it does is in `native/api/src/torch.rs`. The Max Doll Point is four Doll Points in a
+# 2x2 grid, the Doll Point's art in a yellow border (extra/make_max_doll_point.py makes it).
+EXTRA = Path(__file__).resolve().parent / "extra"
+copy(EXTRA / "gigatorch.png", oa / "textures" / "block" / "gigatorch.png")
+copy(EXTRA / "gigatorch_top.png", oa / "textures" / "block" / "gigatorch_top.png")
+copy(EXTRA / "max_doll_point.png", oa / "textures" / "item" / "max_doll_point.png")
+copy(EXTRA / "LICENSE-Torchmaster.txt", out / "LICENSE-Torchmaster.txt")
+write(od / "horizon" / "block" / "gigatorch.json", {
+    # Glass: no tool needed, lets skylight through and occludes nothing, as Torchmaster's block.
+    "template": "minecraft:glass",
+    "properties": {"hardness": 1.0, "explosion_resistance": 1.0, "sounds": "minecraft:oak_planks", "light": 15},
+    "shapes": {"default": [[0.375, 0, 0.375, 0.625, 1, 0.625]]},
+    "item": True,
+})
+face = lambda uv, tex, **kw: dict({"uv": uv, "texture": tex}, **kw)
+side = face([6, 0, 10, 16], "#torch")
+write(oa / "models" / "block" / "gigatorch.json", {
+    "textures": {"torch": f"{NS}:block/gigatorch", "torch_top": f"{NS}:block/gigatorch_top", "particle": f"{NS}:block/gigatorch"},
+    "parent": "block/block",
+    "elements": [{"from": [6, 0, 6], "to": [10, 16, 10], "faces": {
+        "down": face([6, 7, 10, 11], "#torch", cullface="down"), "up": face([6, 6, 10, 10], "#torch_top", cullface="up"),
+        "north": side, "south": side, "west": side, "east": side}}],
+})
+write(oa / "models" / "item" / "gigatorch.json", {"parent": f"{NS}:block/gigatorch"})
+write(oa / "items" / "gigatorch.json", {"model": {"type": "minecraft:model", "model": f"{NS}:block/gigatorch"}})
+write(oa / "blockstates" / "gigatorch.json", {"variants": {"": {"model": f"{NS}:block/gigatorch"}}})
+write(od / "loot_table" / "blocks" / "gigatorch.json", {"type": "minecraft:block", "pools": [{
+    "rolls": 1, "entries": [{"type": "minecraft:item", "name": f"{NS}:gigatorch"}],
+    "conditions": [{"condition": "minecraft:survives_explosion"}]}]})
+write(out / "data" / "minecraft" / "tags" / "block" / "mineable" / "axe.json", {"replace": False, "values": [f"{NS}:gigatorch"]})
+lang[f"block.{NS}.gigatorch"] = "Giga Torch"
+lang[f"item.{NS}.gigatorch"] = "Giga Torch"
+
+write(od / "horizon" / "item" / "max_doll_point.json", {
+    "template": "minecraft:paper", "max_stack_size": 64, "rarity": "epic",
+    "components": {"minecraft:item_name": {"translate": f"item.{NS}.max_doll_point"}},
+})
+write(oa / "items" / "max_doll_point.json", {"model": {"type": "minecraft:model", "model": f"{NS}:item/max_doll_point"}})
+write(oa / "models" / "item" / "max_doll_point.json", {"parent": "minecraft:item/handheld", "textures": {"layer0": f"{NS}:item/max_doll_point"}})
+lang[f"item.{NS}.max_doll_point"] = "Max Doll Point"
+
+write(od / "recipe" / "max_doll_point.json", {
+    "type": "minecraft:crafting_shaped", "category": "misc",
+    "pattern": ["PP", "PP"], "key": {"P": f"{NS}:point_item"},
+    "result": {"id": f"{NS}:max_doll_point"},
+})
+# Torchmaster's recipe at the heart, four Max Doll Points in the corners, and diamonds.
+write(od / "recipe" / "gigatorch.json", {
+    "type": "minecraft:crafting_shaped", "category": "misc",
+    "pattern": ["MTM", "DLD", "MLM"],
+    "key": {"M": f"{NS}:max_doll_point", "D": "minecraft:diamond", "T": "minecraft:torch", "L": "#minecraft:logs"},
+    "result": {"id": f"{NS}:gigatorch"},
+})
+
+tab = [f"{NS}:{i[0]}" for i in ITEMS]
+tab.insert(tab.index(f"{NS}:point_item") + 1, f"{NS}:max_doll_point")
+tab.append(f"{NS}:gigatorch")
 write(od / "horizon" / "creative_tab" / "items.json", {
-    "title": "Touhou Items", "icon": f"{NS}:{ITEMS[0][0]}", "items": [f"{NS}:{i[0]}" for i in ITEMS],
+    "title": "Touhou Items", "icon": f"{NS}:{ITEMS[0][0]}", "items": tab,
 })
 
 lang[f"itemGroup.{NS}.spell_cards"] = "Touhou Items: Spell Cards"
@@ -235,8 +294,8 @@ write(od / "horizon" / "creative_tab" / "spell_cards.json", {
 (out / "horizon-mod.toml").write_text(f'''id = "{NS}"
 name = "Touhou Items Mod (assets)"
 version = "{VERSION}"
-description = "The art and items of the Horizon port of Touhou Items Mod (Itutu no Nandai MOD+, by kuro-anco), with weapons and point items from Grimoire of Alice (by Arekkuusu). Needs thkaguyamod_native."
-authors = ["kuro-anco (Touhou Items Mod)", "Arekkuusu (Grimoire of Alice)", "mxpbxb (Horizon port)"]
+description = "The art and items of the Horizon port of Touhou Items Mod (Itutu no Nandai MOD+, by kuro-anco), with weapons and point items from Grimoire of Alice (by Arekkuusu), and the Giga Torch: Torchmaster's Mega Torch (by Xalcon, MIT). Needs thkaguyamod_native."
+authors = ["kuro-anco (Touhou Items Mod)", "Arekkuusu (Grimoire of Alice)", "Xalcon (Torchmaster)", "mxpbxb (Horizon port)"]
 api = "0.2"
 side = "both"
 capabilities = ["registries"]

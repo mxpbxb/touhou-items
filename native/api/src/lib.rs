@@ -5,20 +5,25 @@
 //! `EntityTHShot` did and settles what it hits; each client is told a shot once, as it is fired,
 //! runs the same motion and draws it facing the camera. Spell cards are scripts the server runs a
 //! tick at a time for whoever cast them.
+//!
+//! The Giga Torch (`torch.rs`) is Torchmaster's Mega Torch, by Xalcon (MIT), brought in here.
 
 mod cards;
 mod items;
 mod pattern;
 mod shot;
+mod torch;
 mod vec;
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
 use horizon_client::mod_api::{
-    ClientLevelUnloadEvent, ClientTickPostEvent, Flow, Hooks, Host, HurtEnemyEvent, InventoryTickEvent,
-    LevelTickPostEvent, LivingEntityUseItemFinishEvent, NativeServerPlayer, NetFromServerEvent, ReleaseUsingEvent, Text,
-    UseItemEvent, WorldSubmitEvent,
+    BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, ClientLevelUnloadEvent, ClientTickPostEvent, Compound,
+    DestroyBlockEvent, EntityJoinLevelEvent, Flow, Hooks, Host, HurtEnemyEvent, InventoryTickEvent, LevelTickPostEvent,
+    LivingEntityUseItemFinishEvent, NativeServerPlayer, NetFromServerEvent, PlaceBlockEvent, PotentialSpawnsEvent,
+    ReleaseUsingEvent, RightClickBlockEvent, ServerTickEvent, Text, TooltipEvent, UseItemEvent, VillageSiegeEvent,
+    WorldSubmitEvent,
 };
 
 use cards::{Actor, Card, Ctx, card_position};
@@ -519,6 +524,57 @@ impl Hooks for Mod {
         );
         for s in shots.values() {
             draw_shot(host, event.draw, s, right, up);
+        }
+    }
+
+    // ---- The Giga Torch (torch.rs) ----
+
+    fn place_block(&self, host: &mut dyn Host, event: &mut PlaceBlockEvent<'_>) {
+        torch::place_block(host, event);
+    }
+
+    fn destroy_block(&self, host: &mut dyn Host, event: &mut DestroyBlockEvent) -> Flow {
+        torch::destroy_block(host, event);
+        Flow::Continue
+    }
+
+    fn block_entity(&self, _: &mut dyn Host, event: &mut BlockEntityEvent<'_>) -> Option<(String, Compound)> {
+        torch::block_entity(event)
+    }
+
+    fn block_entity_ticks(&self, _: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
+        torch::block_entity_ticks(event);
+    }
+
+    fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
+        torch::block_entity_tick(host, event);
+    }
+
+    fn server_tick(&self, host: &mut dyn Host, event: &mut ServerTickEvent<'_>) {
+        torch::server_tick(host, event);
+    }
+
+    fn potential_spawns(&self, host: &dyn Host, event: &mut PotentialSpawnsEvent<'_>) -> Flow {
+        torch::potential_spawns(host, event);
+        Flow::Continue
+    }
+
+    fn entity_join_level(&self, host: &mut dyn Host, event: &mut EntityJoinLevelEvent<'_>) -> Flow {
+        torch::entity_join_level(host, event)
+    }
+
+    fn village_siege(&self, host: &mut dyn Host, event: &mut VillageSiegeEvent<'_>) -> Flow {
+        torch::village_siege(host, event)
+    }
+
+    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
+        torch::right_click_block(host, event);
+        Flow::Continue
+    }
+
+    fn tooltip(&self, _: &dyn Host, event: &mut TooltipEvent<'_>) {
+        if let Some(line) = torch::tooltip_for(&event.stack.item) {
+            event.lines.push((Text::legacy(&format!("§7{line}")), u32::MAX));
         }
     }
 }

@@ -39,9 +39,13 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
 - **Point items:** the Doll Point (four of Arcadian Dream's Max Point Items make one), Power and Big Power, Full Power, Extend (an extra life), Bomb (strikes
   everything around), Star, Faith, Cherry, the UFOs and the Time Orb; the Heavenly Peach.
 - **Spell cards:** nine of the original's cards, each cast at what is in sight, for experience levels.
+- **The Giga Torch:** Torchmaster's Mega Torch (by Xalcon, MIT). Placed, it stops monsters,
+  phantoms, the Touhou Mobs and Arcadian Dream fairies, and village sieges, within 64 blocks.
+  Craft it from a torch, two logs, two diamonds and four **Max Doll Points** (four Doll Points in
+  a square make one).
 
-Only the Mochi Hammer has a recipe; the rest are in the creative tabs, and the point and power items
-drop from Touhou Mobs.
+The Mochi Hammer, the Max Doll Point and the Giga Torch have recipes; the rest are in the creative
+tabs, and the point and power items drop from Touhou Mobs.
 
 ## Building
 
@@ -51,6 +55,9 @@ drop from Touhou Mobs.
 python3 gen_content.py <unpacked thKaguyaMod jar> content <unpacked Grimoire of Alice jar>
 cargo horizon-mod build   # in content/
 ```
+
+`extra/` holds the Giga Torch's and the Max Doll Point's art and Torchmaster's licence
+(`LICENSE-Torchmaster.txt`), which the content mod carries too.
 
 The native mod (`native/`) is built by the Horizon launcher (`native-build`), pinned to one Horizon
 revision.
