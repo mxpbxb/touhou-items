@@ -41,6 +41,9 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
   everything around), Star, Faith, Cherry, the UFOs and the Time Orb; the Heavenly Peach.
 - **Spell cards:** 71 cards from Touhou Items Mod, SPELLCARD PLUS and Journey To Gensokyo, each
   cast at what is in sight, for experience levels.
+  A spell card does half the damage it did in the original. **Limited cards** (Stardust Reverie,
+  Fantasy Seal, Agni Shine, Mesh of Light and Darkness, Flower Wind Moon and Tail Fin Slap) cast as their card does, levels and all, but wear out after 16 casts; the dolls of
+  [Alice Dolls Restringed](https://github.com/mxpbxb/alice-dolls-restringed) give them for a bomb.
 - **Shots and lasers:** the danmaku items fire their own shot, in a random colour; the lasers fire
   lines of light.
 - **The rest of the items:** the Hoshiguma dishes, Hina's dolls, Journey To Gensokyo's ingots,

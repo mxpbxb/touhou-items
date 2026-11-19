@@ -149,6 +149,8 @@ pub struct Shot {
     /// Its user, by entity id.
     pub owner: u32,
     pub by_player: bool,
+    /// Fired by a player's spell card: half damage.
+    pub card: bool,
     /// Gone at the end of this tick (`setDead`).
     pub dead: bool,
     /// Changed by a card's script: clients must be told again.
@@ -173,6 +175,9 @@ pub enum Phase {
     /// It moves: a script may steer it before it does.
     Moving,
 }
+
+/// What a player's spell card does of its damage.
+pub const CARD_DAMAGE: f32 = 0.5;
 
 impl Shot {
     #[allow(clippy::too_many_arguments)]
@@ -220,6 +225,7 @@ impl Shot {
             max_length: 0.0,
             owner: 0,
             by_player: false,
+            card: false,
             dead: false,
             dirty: false,
             anchor: Anchor::None,
@@ -395,7 +401,7 @@ impl Shot {
     /// Its damage, as `getShotDamageWithDifficulty` gives a mob's: a player's shot does its own.
     pub fn damage_for(&self, by_player: bool, difficulty: &str) -> f32 {
         if by_player {
-            return self.damage;
+            return if self.card { self.damage * CARD_DAMAGE } else { self.damage };
         }
         match difficulty {
             "easy" => self.damage * 0.7,
@@ -492,6 +498,7 @@ impl Shot {
             max_length,
             owner: 0,
             by_player: false,
+            card: false,
             dead: false,
             dirty: false,
             anchor: Anchor::None,

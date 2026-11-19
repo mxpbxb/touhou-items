@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.6.0"
+NS, VERSION = "thkaguyamod", "0.7.0"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -95,9 +95,30 @@ for c in translated:
         "textures": {"layer0": f"{NS}:item/spell_card/{item}", "layer1": f"{NS}:item/spell_card/lv{lv}"},
     })
     lang[f"item.{NS}.{item}"] = c["name"]
+# The dolls' cards (Alice Dolls Restringed: a bomb, given to a doll sneaking): a card of their
+# character's, as the card but of LIMITED_USES casts, still costing its levels. Keep in step with
+# `LIMITED_USES` in `native/api/src/lib.rs`.
+LIMITED_USES = 16
+LIMITED = ["spell_card_master_spark", "spell_card_stardust_reverie", "spell_card_musou_fuuin", "spell_card_agunisyain",
+           "spell_card_mesh_light_darkness", "spell_card_kachoufuugetu", "spell_card_tail_fin_slap"]
+by_item = {c["item"]: c for c in translated}
+for item in LIMITED:
+    c = by_item[item]
+    write(od / "horizon" / "item" / f"{item}_limited.json", {
+        "template": "minecraft:paper",
+        "max_stack_size": 1,
+        "rarity": "epic",
+        "components": {
+            "minecraft:item_name": {"translate": f"item.{NS}.{item}_limited"},
+            "minecraft:max_damage": LIMITED_USES,
+        },
+    })
+    write(oa / "items" / f"{item}_limited.json", {"model": {"type": "minecraft:model", "model": f"{NS}:item/{item}"}})
+    lang[f"item.{NS}.{item}_limited"] = f'{c["name"]} (Limited)'
 # The tab: by mod, then by the original's number, the hand-ported cards among Touhou Items Mod's.
 card_tab = [(0, c[2], c[0]) for c in CARDS] + [(MOD_ORDER[c["mod"]], c["number"], c["item"]) for c in translated]
 card_tab = [f"{NS}:{i}" for _, _, i in sorted(card_tab)]
+card_tab += [f"{NS}:{i}_limited" for i in LIMITED]
 
 # The character items. Only the Mochi Hammer has a recipe; the point and power items drop from the
 # Touhou mobs; the rest are in the creative tab only.

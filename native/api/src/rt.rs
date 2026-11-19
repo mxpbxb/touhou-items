@@ -829,6 +829,7 @@ impl<'a, 'h> Cx<'a, 'h> {
         s.id = self.w.give_id();
         s.owner = self.owner;
         s.by_player = self.by_player;
+        s.card = self.by_player;
         s.dirty = true;
         self.w.shots.push(s);
         SH::I(self.w.shots.len() - 1)
@@ -975,6 +976,7 @@ impl<'a, 'h> Cx<'a, 'h> {
         }
         let dim = self.w.dimension.clone();
         let owner = (self.owner != 0).then_some(self.owner);
+        let amount = if self.by_player { amount * crate::shot::CARD_DAMAGE } else { amount };
         self.w.host.hurt_entity(&dim, e.id, amount, "minecraft:thrown", owner)
     }
     /// `addPotionEffect(new PotionEffect(id, ticks, level))`.

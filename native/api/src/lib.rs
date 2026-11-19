@@ -89,6 +89,48 @@ static SERVER: LazyLock<Mutex<Server>> = LazyLock::new(|| {
     Mutex::new(Server { shots: HashMap::new(), casts: Vec::new(), queued: Vec::new(), next_id: 1, rng: Rng::new(seed) })
 });
 
+/// A limited card's id is its card's and this: the dolls' cards, of a few uses.
+const LIMITED: &str = "_limited";
+/// How many times a limited card casts.
+pub const LIMITED_USES: u32 = 16;
+
+/// A use off the limited card `used` in a hand of `player`; at its last, it is gone. While a player
+/// acts the game holds their own slots swapped in (the equipment calls read a stale copy), so the
+/// slot holding this very stack is changed where it is; the equipment is the fallback.
+fn wear(host: &mut dyn Host, player: &NativeServerPlayer, used: &horizon_client::mod_api::ItemStack) {
+    use horizon_client::mod_api::EquipmentSlot;
+    let mut broke = None;
+    for slot in (0..36).chain([-106]) {
+        let Some(s) = host.carried_stack(slot) else { continue };
+        if s.item == used.item && s.damage == used.damage && s.count > 0 {
+            s.damage += 1;
+            if s.damage >= LIMITED_USES {
+                s.count = 0;
+                broke = Some(true);
+            } else {
+                broke = Some(false);
+            }
+            break;
+        }
+    }
+    if broke.is_none() {
+        let Some(living) = host.entity(player.entity_id as u32).and_then(|e| host.living(e)) else { return };
+        for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
+            let Some(mut stack) = host.equipment(slot).filter(|s| s.item == used.item) else { continue };
+            stack.damage += 1;
+            let gone = stack.damage >= LIMITED_USES;
+            host.living_set_equipment(living, slot, (!gone).then_some(stack));
+            broke = Some(gone);
+            break;
+        }
+    }
+    if broke == Some(true)
+        && let Some(l) = host.level(&player.dimension)
+    {
+        host.level_play_sound(l, "minecraft:entity.item.break", player.position, 7, 1.0, 1.0);
+    }
+}
+
 /// Fires what `f` fires from an item, by entity `owner`, in `dimension`.
 fn fire_now(dimension: &str, owner: u32, f: impl FnOnce(&mut Fire)) {
     let Ok(mut server) = SERVER.lock() else { return };
@@ -430,6 +472,7 @@ impl Server {
                         s.id = w.give_id();
                         s.owner = cast.user_entity;
                         s.by_player = true;
+                        s.card = true;
                         s.dirty = true;
                         w.shots.push(s);
                     }
@@ -616,7 +659,13 @@ fn draw_laser(host: &dyn Host, draw: &mut horizon_client::mod_api::NativeWorldDr
 impl Hooks for Mod {
     /// A spell card, used: cast it at whatever living thing is in sight, if its user can pay.
     fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
-        let translated = event.stack.item.strip_prefix("thkaguyamod:").and_then(|i| gen_info::GEN.iter().find(|g| g.item == i));
+        let limited = event.stack.item.strip_prefix("thkaguyamod:").and_then(|i| i.strip_suffix(LIMITED));
+        let translated = event
+            .stack
+            .item
+            .strip_prefix("thkaguyamod:")
+            .map(|i| i.strip_suffix(LIMITED).unwrap_or(i))
+            .and_then(|i| gen_info::GEN.iter().find(|g| g.item == i));
         let (name, need_level, end, script) = match (Card::by_item(&event.stack.item), translated) {
             (Some(card), _) => {
                 let info = card.info();
@@ -659,9 +708,13 @@ impl Hooks for Mod {
             card_pos: card_position(&user),
             card_yaw: user.yaw,
         });
+        drop(server);
         host.action_bar(player.uuid, Text::literal(name));
         if let Some(l) = host.level(&player.dimension) {
             host.level_play_sound(l, "minecraft:entity.illusioner.cast_spell", player.position, 7, 1.0, 1.0);
+        }
+        if limited.is_some() && !creative {
+            wear(host, &player, event.stack);
         }
         Flow::Cancel
     }
