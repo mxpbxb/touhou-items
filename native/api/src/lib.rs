@@ -9,8 +9,15 @@
 //! The Giga Torch (`torch.rs`) is Torchmaster's Mega Torch, by Xalcon (MIT), brought in here.
 
 mod cards;
+mod gen_info;
+#[cfg(test)]
+mod gen_test;
+#[rustfmt::skip]
+#[allow(non_camel_case_types, non_snake_case, unused)]
+mod gen_cards;
 mod items;
 mod pattern;
+mod rt;
 mod shot;
 mod torch;
 mod vec;
@@ -27,8 +34,10 @@ use horizon_client::mod_api::{
 };
 
 use cards::{Actor, Card, Ctx, card_position};
+use gen_info::GenInfo;
+use rt::{Cx, EH, Ent, Hit, SH, World};
 use pattern::Fire;
-use shot::{Batch, Shot, form, shot_full, special};
+use shot::{Batch, Phase, Shot, form, laser, shot_full, special};
 use vec::{Rng, V3, angle, v3};
 
 pub fn hooks() -> Box<dyn Hooks> {
@@ -43,33 +52,34 @@ const TARGET_RANGE: f64 = 32.0;
 
 // ---- The server's side ----
 
-/// A shot in flight, and who fired it.
-struct Live {
-    shot: Shot,
-    owner: u32,
-    by_player: bool,
+/// What a cast runs: a hand-ported card and its two numbers, or a translated one and its state
+/// (made at its first tick, as its constructor needs the world).
+enum Script {
+    Hand(Card, [f32; 2]),
+    Gen(&'static GenInfo, Option<gen_cards::State>),
 }
 
 /// A spell card being cast.
 struct Cast {
-    card: Card,
+    script: Script,
     user: u128,
     user_entity: u32,
     dimension: String,
     time: i32,
     level: i32,
+    /// Ticks it lasts: a translated card may change it (`setEndTime`).
+    end: i32,
     target: Option<u32>,
     target_point: V3,
     card_pos: V3,
     card_yaw: f32,
-    state: [f32; 2],
 }
 
 struct Server {
-    shots: HashMap<String, Vec<Live>>,
+    shots: HashMap<String, Vec<Shot>>,
     casts: Vec<Cast>,
     /// Shots fired by items between ticks, by level: the next tick sends them.
-    queued: Vec<(String, Live)>,
+    queued: Vec<(String, Shot)>,
     next_id: u32,
     rng: Rng,
 }
@@ -84,9 +94,12 @@ fn fire_now(dimension: &str, owner: u32, f: impl FnOnce(&mut Fire)) {
     let Ok(mut server) = SERVER.lock() else { return };
     let mut out = Vec::new();
     f(&mut Fire { out: &mut out, rng: &mut server.rng });
-    for shot in out {
+    for mut shot in out {
+        shot.owner = owner;
+        shot.by_player = true;
+        shot.dirty = true;
         let shot = server.give_id(shot);
-        server.queued.push((dimension.to_owned(), Live { shot, owner, by_player: true }));
+        server.queued.push((dimension.to_owned(), shot));
     }
 }
 
@@ -116,7 +129,7 @@ fn total_xp(level: i32, progress: f32) -> i32 {
 }
 
 /// Animals and villagers are no spell card's target, as in the original.
-fn passive(kind: &str) -> bool {
+pub(crate) fn passive(kind: &str) -> bool {
     const PASSIVE: [&str; 28] = [
         "cow", "pig", "sheep", "chicken", "horse", "donkey", "mule", "rabbit", "villager", "wandering_trader", "cat",
         "wolf", "parrot", "fox", "bee", "axolotl", "goat", "llama", "turtle", "frog", "camel", "sniffer", "armadillo",
@@ -179,7 +192,7 @@ fn find_target(host: &mut dyn Host, p: &NativeServerPlayer) -> Option<(u32, V3)>
         .map(|(_, id, b)| (id, middle(b)))
 }
 
-fn passable(block: &str) -> bool {
+pub(crate) fn passable(block: &str) -> bool {
     const SOFT: [&str; 30] = [
         "air", "water", "lava", "grass", "fern", "torch", "vine", "vines", "sapling", "rail", "button", "carpet", "sign",
         "kelp", "kelp_plant", "snow", "bush", "flower", "tulip", "poppy", "dandelion", "orchid", "allium", "bluet",
@@ -189,6 +202,36 @@ fn passable(block: &str) -> bool {
     SOFT.iter().any(|s| name.ends_with(s))
 }
 
+/// The face a shot moving `m` strikes first, as Minecraft numbers faces.
+fn side_struck(m: V3) -> i32 {
+    let (x, y, z) = (m.x.abs(), m.y.abs(), m.z.abs());
+    if y >= x && y >= z {
+        if m.y < 0.0 { 1 } else { 0 }
+    } else if x >= z {
+        if m.x < 0.0 { 5 } else { 4 }
+    } else if m.z < 0.0 {
+        3
+    } else {
+        2
+    }
+}
+
+/// The engine's own block-hit specials (`EntityTHShot.blockHitSpecialProcess`): bouncing shots.
+fn bounce(s: &mut Shot) -> bool {
+    let (times, next) = match s.special {
+        40 => (2, 0),
+        41 => (3, 40),
+        42 => (4, 41),
+        43 => (9999, 43),
+        _ => return false,
+    };
+    s.pos = s.prev;
+    s.bound(0.9, times);
+    s.special = next;
+    s.dirty = true;
+    true
+}
+
 impl Server {
     fn give_id(&mut self, mut shot: Shot) -> Shot {
         shot.id = self.next_id;
@@ -196,65 +239,161 @@ impl Server {
         shot
     }
 
-    /// One tick of a level: shots move and hit, casts fire. What clients must hear is returned.
+    /// One tick of a level: shots move and hit, casts fire, helpers act. What clients must hear is
+    /// returned.
     fn tick(&mut self, host: &mut dyn Host, dimension: &str) -> Batch {
         let mut batch = Batch::default();
         let has_shots = self.shots.get(dimension).is_some_and(|v| !v.is_empty());
         let has_queued = self.queued.iter().any(|(d, _)| d == dimension);
-        if !has_shots && !has_queued && !self.casts.iter().any(|c| c.dimension == dimension) {
+        let has_casts = self.casts.iter().any(|c| c.dimension == dimension);
+        if !has_shots && !has_queued && !has_casts && rt::helpers_in(dimension).is_empty() {
             return batch;
         }
         let players = host.server_players();
         let level = host.level(dimension);
-        if has_shots {
-            let difficulty = level.and_then(|l| host.level_difficulty(l)).unwrap_or("normal");
-            let bodies = bodies(host, dimension);
-            let shots = self.shots.entry(dimension.to_owned()).or_default();
-            let mut kept = Vec::with_capacity(shots.len());
-            for mut live in shots.drain(..) {
-                if !live.shot.step() {
-                    continue;
-                }
-                let s = &live.shot;
-                let mut hit = false;
-                if s.solid() {
-                    let travel = s.pos - s.prev;
-                    let reach = travel.length();
-                    let dir = if reach > 1e-9 { travel * (1.0 / reach) } else { v3(0.0, 1.0, 0.0) };
-                    for (id, _, b) in &bodies {
-                        if *id == live.owner {
-                            continue;
+        let difficulty = level.and_then(|l| host.level_difficulty(l)).unwrap_or("normal");
+        let bodies = if has_shots { bodies(host, dimension) } else { Vec::new() };
+        let mut shots = self.shots.remove(dimension).unwrap_or_default();
+        let mut i = 0;
+        while i < self.queued.len() {
+            if self.queued[i].0 == dimension {
+                shots.push(self.queued.swap_remove(i).1);
+            } else {
+                i += 1;
+            }
+        }
+        let seed = u64::from(self.rng.int(u32::MAX)) << 32 | u64::from(self.rng.int(u32::MAX));
+        let mut w = World::new(host, dimension, shots, self.next_id);
+
+        // Each shot moves, its card's script steering it where it has one; set lasers follow.
+        let moving = w.shots.len();
+        for i in 0..moving {
+            if w.shots[i].frozen > 0 {
+                let s = &mut w.shots[i];
+                s.frozen -= 1;
+                s.prev = s.pos;
+                s.dirty = true;
+                continue;
+            }
+            match w.shots[i].begin() {
+                Phase::Gone => w.shots[i].dead = true,
+                Phase::Waiting => {}
+                Phase::Moving => {
+                    let (sp, owner, by_player) = (w.shots[i].special, w.shots[i].owner, w.shots[i].by_player);
+                    if gen_cards::owns_special(sp) || sp == rt::special::MUSOU {
+                        let owner = w.ent(owner);
+                        let mut cx = Cx::new(&mut w, owner, Ent::NONE, V3::ZERO, seed ^ i as u64);
+                        cx.by_player = by_player;
+                        if sp == rt::special::MUSOU {
+                            rt::musou(&mut cx, SH::I(i));
+                        } else {
+                            gen_cards::special_move(&mut cx, sp, SH::I(i));
                         }
-                        if ray_box(s.prev, dir, reach.max(1e-6), grow(*b, f64::from(s.size) * 0.5)).is_some() {
-                            host.hurt_entity(dimension, *id, s.damage_for(live.by_player, difficulty), "minecraft:thrown", Some(live.owner));
-                            if s.special == special::WIND
-                                && let Some(e) = host.entity(*id)
-                            {
-                                let v = host.entity_velocity(e).unwrap_or([0.0; 3]);
-                                let m = s.motion * 1.7;
-                                host.entity_set_velocity(e, [v[0] + m.x, v[1] + m.y + 2.0, v[2] + m.z]);
-                            }
-                            hit = true;
-                            break;
-                        }
+                    } else {
+                        w.shots[i].special_motion();
                     }
-                    if !hit
-                        && let Some(l) = level
-                    {
-                        let at = [s.pos.x.floor() as i32, s.pos.y.floor() as i32, s.pos.z.floor() as i32];
-                        hit = host.level_block(l, at).is_some_and(|b| !passable(&b));
+                    if !w.shots[i].dead {
+                        w.shots[i].finish();
                     }
-                }
-                if hit {
-                    batch.gone.push(live.shot.id);
-                } else {
-                    kept.push(live);
                 }
             }
-            *shots = kept;
+            if w.shots[i].laser == laser::SET && !w.shots[i].dead {
+                match rt::anchor_pos(&w, w.shots[i].anchor) {
+                    Some(a) => {
+                        let s = &mut w.shots[i];
+                        let p = a + s.angle * s.set_length + v3(0.0, s.y_offset, 0.0);
+                        if p != s.pos {
+                            s.pos = p;
+                            s.dirty = true;
+                        }
+                    }
+                    None => w.shots[i].dead = true,
+                }
+            }
         }
 
+        // What each hits: living things (never their own user, nor animals and villagers), then blocks.
+        for i in 0..moving {
+            let s = w.shots[i].clone();
+            if s.dead || !s.solid() {
+                continue;
+            }
+            let owns = gen_cards::owns_special(s.special);
+            if s.laser != laser::NONE {
+                let width = f64::from(s.size);
+                let dir = rt::jnorm(s.angle);
+                let start = s.pos + dir * width;
+                let reach = (s.length - width).max(1e-6);
+                for (id, kind, b) in &bodies {
+                    if *id == s.owner || passive(kind) || ray_box(start, dir, reach, grow(*b, width)).is_none() {
+                        continue;
+                    }
+                    if owns {
+                        let (owner, target) = (w.ent(s.owner), w.ent(*id));
+                        let mut cx = Cx::new(&mut w, owner, Ent::NONE, V3::ZERO, seed ^ i as u64);
+                        let _ = gen_cards::special_hit_entity(&mut cx, s.special, SH::I(i), EH::Ent(target));
+                    }
+                    w.host.hurt_entity(dimension, *id, s.damage_for(s.by_player, difficulty), "minecraft:thrown", Some(s.owner));
+                }
+                continue;
+            }
+            let mut hit = false;
+            if s.form != form::FAMILIAR {
+                let travel = s.pos - s.prev;
+                let reach = travel.length();
+                let dir = if reach > 1e-9 { travel * (1.0 / reach) } else { v3(0.0, 1.0, 0.0) };
+                for (id, kind, b) in &bodies {
+                    if *id == s.owner || passive(kind) || ray_box(s.prev, dir, reach.max(1e-6), grow(*b, f64::from(s.size) * 0.5)).is_none() {
+                        continue;
+                    }
+                    let keep = if owns {
+                        let (owner, target) = (w.ent(s.owner), w.ent(*id));
+                        let mut cx = Cx::new(&mut w, owner, Ent::NONE, V3::ZERO, seed ^ i as u64);
+                        cx.by_player = s.by_player;
+                        gen_cards::special_hit_entity(&mut cx, s.special, SH::I(i), EH::Ent(target)).unwrap_or(false)
+                    } else {
+                        if s.special == special::WIND
+                            && let Some(e) = w.host.entity(*id)
+                        {
+                            let v = w.host.entity_velocity(e).unwrap_or([0.0; 3]);
+                            let m = s.motion * 1.7;
+                            w.host.entity_set_velocity(e, [v[0] + m.x, v[1] + m.y + 2.0, v[2] + m.z]);
+                        }
+                        false
+                    };
+                    w.host.hurt_entity(dimension, *id, s.damage_for(s.by_player, difficulty), "minecraft:thrown", Some(s.owner));
+                    if !keep {
+                        w.shots[i].dead = true;
+                    }
+                    hit = true;
+                    break;
+                }
+            }
+            if hit || w.shots[i].dead {
+                continue;
+            }
+            let Some(l) = level else { continue };
+            let at = [s.pos.x.floor() as i32, s.pos.y.floor() as i32, s.pos.z.floor() as i32];
+            if !w.host.level_block(l, at).is_some_and(|b| !passable(&b)) {
+                continue;
+            }
+            let keep = if owns {
+                let owner = w.ent(s.owner);
+                let h = Hit { present: true, entity: EH::None, side: side_struck(s.motion), at: s.pos, bx: at[0], by: at[1], bz: at[2] };
+                let mut cx = Cx::new(&mut w, owner, Ent::NONE, V3::ZERO, seed ^ i as u64);
+                cx.by_player = s.by_player;
+                gen_cards::special_hit_block(&mut cx, s.special, SH::I(i), h).unwrap_or(false)
+            } else {
+                bounce(&mut w.shots[i])
+            };
+            if !keep {
+                w.shots[i].dead = true;
+            }
+        }
+
+        // The casts of this level fire.
         let mut casts = std::mem::take(&mut self.casts);
+        let rng = &mut self.rng;
         casts.retain_mut(|cast| {
             if cast.dimension != dimension {
                 return true;
@@ -262,77 +401,126 @@ impl Server {
             let Some(p) = players.iter().find(|p| p.uuid == cast.user && p.dimension == dimension && p.health > 0.0) else {
                 return false;
             };
-            let user = actor(p);
-            let mut target_alive = false;
-            if let Some(id) = cast.target
-                && let Some(e) = host.entity(id)
-                && host.living(e).is_some()
-                && let Some(b) = host.entity_bounding_box(e)
-            {
-                cast.target_point = middle(b);
-                target_alive = true;
+            let mut target = None;
+            if let Some(id) = cast.target {
+                let e = w.ent(id);
+                if e.present && e.living && !e.dead {
+                    cast.target_point = v3(e.x, e.y + f64::from(e.height) / 2.0, e.z);
+                    target = Some(e);
+                }
             }
-            let ctx = Ctx {
-                time: cast.time,
-                level: cast.level,
-                user,
-                target: cast.target_point,
-                target_alive,
-                card: cast.card_pos,
-                card_yaw: cast.card_yaw,
-            };
-            let mut fired = Vec::new();
-            cast.card.tick(&ctx, &mut cast.state, &mut Fire { out: &mut fired, rng: &mut self.rng });
-            if cast.card == Card::PerfectFreeze && cast.time == 64 {
-                self.freeze(dimension, ctx.pos_user(), &mut fired, &mut batch.gone);
-            }
-            for s in fired {
-                let s = self.give_id(s);
-                batch.fired.push(s.clone());
-                self.shots.entry(dimension.to_owned()).or_default().push(Live { shot: s, owner: cast.user_entity, by_player: true });
-            }
-            if cast.time == 0 || cast.time % 4 == 0 {
-                if let Some(l) = level {
-                    host.level_play_sound(l, "minecraft:entity.arrow.shoot", ctx.pos_user().array(), 7, 0.6, 1.2);
+            match &mut cast.script {
+                Script::Hand(card, state) => {
+                    let user = actor(p);
+                    let ctx = Ctx {
+                        time: cast.time,
+                        level: cast.level,
+                        user,
+                        target: cast.target_point,
+                        target_alive: target.is_some(),
+                        card: cast.card_pos,
+                        card_yaw: cast.card_yaw,
+                    };
+                    let mut fired = Vec::new();
+                    card.tick(&ctx, state, &mut Fire { out: &mut fired, rng });
+                    if *card == Card::PerfectFreeze && cast.time == 64 {
+                        freeze(&mut w.shots, ctx.pos_user(), &mut fired, rng);
+                    }
+                    for mut s in fired {
+                        s.id = w.give_id();
+                        s.owner = cast.user_entity;
+                        s.by_player = true;
+                        s.dirty = true;
+                        w.shots.push(s);
+                    }
+                    if cast.time % 4 == 0 {
+                        w.sounds.push(ctx.pos_user());
+                    }
+                }
+                Script::Gen(info, state) => {
+                    let user = w.ent(cast.user_entity);
+                    let aim = target.unwrap_or(Ent {
+                        x: cast.target_point.x,
+                        y: cast.target_point.y,
+                        z: cast.target_point.z,
+                        ..Ent::NONE
+                    });
+                    let seed = u64::from(rng.int(u32::MAX));
+                    let mut cx = Cx::new(&mut w, user, aim, cast.card_pos, seed);
+                    cx.time = cast.time;
+                    cx.level = cast.level;
+                    cx.end = cast.end;
+                    cx.need = info.need;
+                    cx.number = info.number;
+                    cx.by_player = true;
+                    if state.is_none() {
+                        *state = gen_cards::start(&mut cx, info.class);
+                    }
+                    let Some(st) = state.as_mut() else { return false };
+                    gen_cards::tick(&mut cx, st);
+                    if let Some(end) = cx.new_end {
+                        cast.end = end;
+                    }
                 }
             }
             cast.time += 1;
-            cast.time < cast.card.info().end
+            cast.time < cast.end
         });
         casts.append(&mut self.casts);
         self.casts = casts;
-        let mut i = 0;
-        while i < self.queued.len() {
-            if self.queued[i].0 == dimension {
-                let (_, live) = self.queued.swap_remove(i);
-                batch.fired.push(live.shot.clone());
-                self.shots.entry(dimension.to_owned()).or_default().push(live);
-            } else {
-                i += 1;
+
+        rt::tick_helpers(&mut w, seed);
+
+        // A sound for each place shots were fired from, a few a tick at most.
+        let mut sounds: Vec<V3> = Vec::new();
+        for p in std::mem::take(&mut w.sounds) {
+            if sounds.len() < 4 && !sounds.iter().any(|q| (*q - p).length() < 2.0) {
+                sounds.push(p);
             }
         }
+        if let Some(l) = level {
+            for p in sounds {
+                w.host.level_play_sound(l, "minecraft:entity.arrow.shoot", p.array(), 7, 0.6, 1.2);
+            }
+        }
+
+        // Clients hear of every shot new or changed, and of those gone before their time.
+        let (shots, next_id) = w.finish();
+        self.next_id = next_id;
+        let mut kept = Vec::with_capacity(shots.len());
+        for mut s in shots {
+            if s.dead {
+                if s.count <= s.end {
+                    batch.gone.push(s.id);
+                }
+                continue;
+            }
+            if s.dirty {
+                s.dirty = false;
+                batch.fired.push(s.clone());
+            }
+            kept.push(s);
+        }
+        if !kept.is_empty() {
+            self.shots.insert(dimension.to_owned(), kept);
+        }
+        rt::sweep_helpers();
         batch
     }
+}
 
-    /// Perfect Freeze at its sixty-fourth tick: every shot within twenty blocks stops, turns white and
-    /// faces a random way, to set off again twenty ticks on.
-    fn freeze(&mut self, dimension: &str, at: V3, fired: &mut Vec<Shot>, gone: &mut Vec<u32>) {
-        let Some(shots) = self.shots.get_mut(dimension) else { return };
-        let mut frozen = Vec::new();
-        shots.retain(|live| {
-            let d = live.shot.pos - at;
-            let near = d.x.abs() <= 20.0 && d.y.abs() <= 20.0 && d.z.abs() <= 20.0;
-            if near {
-                frozen.push(live.shot.clone());
-                gone.push(live.shot.id);
-            }
-            !near
-        });
-        for old in frozen {
-            let a = angle(self.rng.float() * 360.0, self.rng.float() * 180.0 - 90.0);
-            let data = shot_full(old.form, 7, old.size, old.damage, 0, old.end - old.ticks + 50, special::FREEZE);
-            fired.push(Shot::new(old.pos, a, 0.0, pattern::rotate_default(), 0.0, 9999, 1e-4, 1e-4, 0.0, V3::ZERO, data));
+/// Perfect Freeze at its sixty-fourth tick: every shot within twenty blocks stops, turns white and
+/// faces a random way, to set off again twenty ticks on.
+fn freeze(shots: &mut [Shot], at: V3, fired: &mut Vec<Shot>, rng: &mut Rng) {
+    for old in shots.iter_mut() {
+        let d = old.pos - at;
+        if old.dead || d.x.abs() > 20.0 || d.y.abs() > 20.0 || d.z.abs() > 20.0 {
+            continue;
         }
+        old.dead = true;
+        let a = angle(rng.float() * 360.0, rng.float() * 180.0 - 90.0);
+        let data = shot_full(old.form, 7, old.size, old.damage, 0, old.end - old.ticks + 50, special::FREEZE);
+        fired.push(Shot::new(old.pos, a, 0.0, pattern::rotate_default(), 0.0, 9999, 1e-4, 1e-4, 0.0, V3::ZERO, data));
     }
 }
 
@@ -395,12 +583,49 @@ fn draw_shot(host: &dyn Host, draw: &mut horizon_client::mod_api::NativeWorldDra
     draw.pop();
 }
 
+/// A laser: a beam of its colour, a white core down its middle, from where it is along the way it
+/// faces, as long as it has grown, turned about its length to face the camera.
+fn draw_laser(host: &dyn Host, draw: &mut horizon_client::mod_api::NativeWorldDraw, s: &Shot, forward: V3) {
+    if s.length <= 0.01 {
+        return;
+    }
+    let partial = f64::from(draw.partial);
+    let at = s.prev.lerp(s.pos, partial);
+    let d = rt::jnorm(s.angle);
+    let side = rt::cross(d, forward);
+    let side = if side.length() < 1e-6 { rt::cross(d, v3(0.0, 1.0, 0.0)) } else { side };
+    let side = rt::jnorm(side);
+    let end = d * s.length;
+    // Form 3 and above are the Master Spark's sort: white light.
+    let tint = if s.form >= 3 { [255, 255, 255] } else { TINT[usize::from(s.color % 8)] };
+    let width = f64::from(s.size.max(0.05));
+    // Still appearing: a thin line where it will be.
+    let grown = if s.count < 0 { 0.15 } else { 1.0 };
+    let corner = |p: V3| [p.x as f32, p.y as f32, p.z as f32];
+    draw.push();
+    if draw.translate_world(at.array()) {
+        for (half, rgba) in [(width * grown, [tint[0], tint[1], tint[2], 170]), (width * 0.45 * grown, [255, 255, 255, 230])] {
+            let r = side * half;
+            let corners = [corner(-r), corner(-r + end), corner(r + end), corner(r)];
+            host.world_quad(draw, LIGHT, corners, [4.0, 4.0, 4.0, 12.0], rgba);
+        }
+    }
+    draw.pop();
+}
+
 impl Hooks for Mod {
     /// A spell card, used: cast it at whatever living thing is in sight, if its user can pay.
     fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
-        let Some(card) = Card::by_item(&event.stack.item) else { return items::use_item(host, &event.stack.item) };
+        let translated = event.stack.item.strip_prefix("thkaguyamod:").and_then(|i| gen_info::GEN.iter().find(|g| g.item == i));
+        let (name, need_level, end, script) = match (Card::by_item(&event.stack.item), translated) {
+            (Some(card), _) => {
+                let info = card.info();
+                (info.name, info.need_level, info.end, Script::Hand(card, [0.0; 2]))
+            }
+            (None, Some(g)) => (g.name, g.need, g.end, Script::Gen(g, None)),
+            (None, None) => return items::use_item(host, &event.stack.item),
+        };
         let Some(player) = host.acting_player() else { return Flow::Continue };
-        let info = card.info();
         let Ok(mut server) = SERVER.lock() else { return Flow::Continue };
         if server.casts.iter().any(|c| c.user == player.uuid) {
             host.action_bar(player.uuid, Text::literal("A spell card is already declared"));
@@ -408,11 +633,11 @@ impl Hooks for Mod {
         }
         let creative = player.game_mode == 1;
         if !creative {
-            if player.xp_level < info.need_level {
-                host.action_bar(player.uuid, Text::literal(format!("{} needs {} levels", info.name, info.need_level)));
+            if player.xp_level < need_level {
+                host.action_bar(player.uuid, Text::literal(format!("{name} needs {need_level} levels")));
                 return Flow::Cancel;
             }
-            let level = player.xp_level - info.need_level;
+            let level = player.xp_level - need_level;
             let progress = player.xp_progress;
             host.set_player_status(player.uuid, None, None, Some((level, progress, total_xp(level, progress))));
         }
@@ -422,19 +647,19 @@ impl Hooks for Mod {
             None => (None, user.pos + v3(0.0, user.eye_height, 0.0) + user.look() * 16.0),
         };
         server.casts.push(Cast {
-            card,
+            script,
             user: player.uuid,
             user_entity: player.entity_id as u32,
             dimension: player.dimension.clone(),
             time: 0,
             level: 2,
+            end,
             target,
             target_point,
             card_pos: card_position(&user),
             card_yaw: user.yaw,
-            state: [0.0; 2],
         });
-        host.action_bar(player.uuid, Text::literal(info.name));
+        host.action_bar(player.uuid, Text::literal(name));
         if let Some(l) = host.level(&player.dimension) {
             host.level_play_sound(l, "minecraft:entity.illusioner.cast_spell", player.position, 7, 1.0, 1.0);
         }
@@ -490,7 +715,10 @@ impl Hooks for Mod {
             for id in batch.gone {
                 shots.remove(&id);
             }
-            for s in batch.fired {
+            for mut s in batch.fired {
+                if let Some(old) = shots.get(&s.id) {
+                    s.prev = old.pos;
+                }
                 shots.insert(s.id, s);
             }
         }
@@ -523,7 +751,11 @@ impl Hooks for Mod {
             right.x * forward.y - right.y * forward.x,
         );
         for s in shots.values() {
-            draw_shot(host, event.draw, s, right, up);
+            if s.laser == laser::NONE {
+                draw_shot(host, event.draw, s, right, up);
+            } else {
+                draw_laser(host, event.draw, s, forward);
+            }
         }
     }
 

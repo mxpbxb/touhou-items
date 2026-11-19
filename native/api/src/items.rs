@@ -16,6 +16,9 @@ use crate::shot::{form, shot, shot_full};
 use crate::vec::{V3, v3};
 use crate::{actor, bodies, fire_now, grow, middle, ray_box};
 
+#[path = "more.rs"]
+mod more;
+
 const NS: &str = "thkaguyamod:";
 
 /// The colours, by `THShotLib`'s numbers.
@@ -434,7 +437,7 @@ pub fn use_item(host: &mut dyn Host, item: &str) -> Flow {
             sound(host, &p, "minecraft:block.bell.resonate", 1.4);
             Flow::Cancel
         }
-        _ => Flow::Continue,
+        _ => more::use_item(host, item, &p).unwrap_or(Flow::Continue),
     }
 }
 
@@ -442,7 +445,7 @@ pub fn use_item(host: &mut dyn Host, item: &str) -> Flow {
 /// run where the window's player is; the shots where the world is.
 pub fn release(host: &mut dyn Host, item: &str, entity: Option<i32>, time_left: i32) -> bool {
     let Some(name) = short(item) else { return false };
-    if !matches!(name, "hakurouken" | "roukanken" | "tengu_fan" | "nuclear_control_rod" | "mini_hakkero") {
+    if !matches!(name, "hakurouken" | "roukanken" | "tengu_fan" | "nuclear_control_rod" | "mini_hakkero") && !more::charged(name) {
         return false;
     }
     let held = (CHARGE_TICKS - time_left).max(0);
@@ -520,6 +523,11 @@ pub fn release(host: &mut dyn Host, item: &str, entity: Option<i32>, time_left: 
                 host.push_player(kick(look * -1.2));
             }
         }
+        n if more::charged(n) => {
+            if let Some(p) = &server {
+                more::release(host, n, p, held);
+            }
+        }
         _ => return false,
     }
     true
@@ -551,6 +559,7 @@ pub fn carried(host: &mut dyn Host, slot: i32, selected: bool) {
 
 /// A tick of a level: the extra damage whose time has come lands.
 pub fn tick(host: &mut dyn Host, dimension: &str) {
+    more::worn(host, dimension);
     let due: Vec<Pending> = {
         let Ok(mut s) = STATE.lock() else { return };
         if s.pending.is_empty() {

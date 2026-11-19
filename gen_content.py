@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.5.0"
+NS, VERSION = "thkaguyamod", "0.6.0"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -71,6 +71,33 @@ for item, icon, number, need, name in CARDS:
     lang[f"item.{NS}.{item}"] = name
 for lv in range(1, 6):
     copy(src / "items" / "spellCard" / f"spellcard_lv{lv}.png", oa / "textures" / "item" / "spell_card" / f"lv{lv}.png")
+
+# The translated cards (`native/api/src/gen_cards.rs`), from Touhou Items Mod, SPELLCARD PLUS and
+# Journey To Gensokyo: `tools/cardtable.py` lists them, with their icons in the unpacked jars. Two of
+# Touhou Items Mod's do nothing in the original (their scripts are empty) and get no item.
+EMPTY = {"THSC_Spear_the_Gungnir", "THSC_Zenzinrui_no_Hisouten"}
+MOD_ORDER = {"kaguya": 0, "spellcard": 1, "jtg": 2}
+jars = jar.parent
+translated = [c for c in json.loads((Path(__file__).resolve().parent / "gen_cards.json").read_text(encoding="utf-8"))
+              if c["class"] not in EMPTY]
+for c in translated:
+    item, lv = c["item"], min(max(c["need"], 1), 5)
+    copy(jars / c["icon"], oa / "textures" / "item" / "spell_card" / f"{item}.png")
+    write(od / "horizon" / "item" / f"{item}.json", {
+        "template": "minecraft:paper",
+        "max_stack_size": 16,
+        "rarity": "rare",
+        "components": {"minecraft:item_name": {"translate": f"item.{NS}.{item}"}},
+    })
+    write(oa / "items" / f"{item}.json", {"model": {"type": "minecraft:model", "model": f"{NS}:item/{item}"}})
+    write(oa / "models" / "item" / f"{item}.json", {
+        "parent": "minecraft:item/generated",
+        "textures": {"layer0": f"{NS}:item/spell_card/{item}", "layer1": f"{NS}:item/spell_card/lv{lv}"},
+    })
+    lang[f"item.{NS}.{item}"] = c["name"]
+# The tab: by mod, then by the original's number, the hand-ported cards among Touhou Items Mod's.
+card_tab = [(0, c[2], c[0]) for c in CARDS] + [(MOD_ORDER[c["mod"]], c["number"], c["item"]) for c in translated]
+card_tab = [f"{NS}:{i}" for _, _, i in sorted(card_tab)]
 
 # The character items. Only the Mochi Hammer has a recipe; the point and power items drop from the
 # Touhou mobs; the rest are in the creative tab only.
@@ -279,23 +306,35 @@ write(od / "recipe" / "gigatorch.json", {
     "result": {"id": f"{NS}:gigatorch"},
 })
 
+# The rest of the four mods' items, blocks, ores and recipes.
+exec((Path(__file__).resolve().parent / "gen_more.py").read_text(encoding="utf-8"))
+EXTRA_MINEABLE.setdefault("axe", []).insert(0, f"{NS}:gigatorch")
+for tag, members in EXTRA_MINEABLE.items():
+    folder = "mineable/" + tag if tag in ("pickaxe", "axe", "shovel") else tag
+    write(out / "data" / "minecraft" / "tags" / "block" / f"{folder}.json", {"replace": False, "values": members})
+
 tab = [f"{NS}:{i[0]}" for i in ITEMS]
 tab.insert(tab.index(f"{NS}:point_item") + 1, f"{NS}:max_doll_point")
 tab.append(f"{NS}:gigatorch")
+tab += MORE_TAB
 write(od / "horizon" / "creative_tab" / "items.json", {
     "title": "Touhou Items", "icon": f"{NS}:{ITEMS[0][0]}", "items": tab,
+})
+lang[f"itemGroup.{NS}.blocks"] = "Touhou Items: Blocks"
+write(od / "horizon" / "creative_tab" / "blocks.json", {
+    "title": "Touhou Items: Blocks", "icon": f"{NS}:danmaku_crafting_table", "items": BLOCK_TAB,
 })
 
 lang[f"itemGroup.{NS}.spell_cards"] = "Touhou Items: Spell Cards"
 write(oa / "lang" / "en_us.json", lang)
 write(od / "horizon" / "creative_tab" / "spell_cards.json", {
-    "title": "Touhou Items: Spell Cards", "icon": f"{NS}:{CARDS[3][0]}", "items": [f"{NS}:{c[0]}" for c in CARDS],
+    "title": "Touhou Items: Spell Cards", "icon": f"{NS}:{CARDS[3][0]}", "items": card_tab,
 })
 (out / "horizon-mod.toml").write_text(f'''id = "{NS}"
 name = "Touhou Items Mod (assets)"
 version = "{VERSION}"
-description = "The art and items of the Horizon port of Touhou Items Mod (Itutu no Nandai MOD+, by kuro-anco), with weapons and point items from Grimoire of Alice (by Arekkuusu), and the Giga Torch: Torchmaster's Mega Torch (by Xalcon, MIT). Needs thkaguyamod_native."
-authors = ["kuro-anco (Touhou Items Mod)", "Arekkuusu (Grimoire of Alice)", "Xalcon (Torchmaster)", "mxpbxb (Horizon port)"]
+description = "The art and items of the Horizon port of Touhou Items Mod (Itutu no Nandai MOD+, by kuro-anco), with the spell cards of SPELLCARD PLUS and Journey To Gensokyo (by Katrix), weapons and point items from Grimoire of Alice (by Arekkuusu), and the Giga Torch: Torchmaster's Mega Torch (by Xalcon, MIT). Needs thkaguyamod_native."
+authors = ["kuro-anco (Touhou Items Mod)", "SPELLCARD PLUS authors", "Katrix (Journey To Gensokyo)", "Arekkuusu (Grimoire of Alice)", "Xalcon (Torchmaster)", "mxpbxb (Horizon port)"]
 api = "0.2"
 side = "both"
 capabilities = ["registries"]

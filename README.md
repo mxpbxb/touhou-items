@@ -1,7 +1,8 @@
 # Touhou Items
 
-The weapons, tools, spell cards and point items of **Touhou Items Mod** (Itutu no Nandai MOD+, by
-kuro-anco), with the weapons and point items of **Grimoire of Alice** (by Arekkuusu), brought to
+The weapons, tools, blocks, spell cards and point items of **Touhou Items Mod** (Itutu no Nandai
+MOD+, by kuro-anco), with the spell cards of **SPELLCARD PLUS** and **Journey To Gensokyo** (by
+Katrix), and the weapons, blocks and point items of **Grimoire of Alice** (by Arekkuusu), brought to
 [Horizon](https://playhorizon.dev).
 
 Ported with the permission of the original creators. Their art and designs are theirs; this
@@ -28,7 +29,7 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
   Spear the Gungnir (right-click: a line of light), Scythe of Death (right-click pulls, sneak pushes),
   the Hakurei and Wind Shrine Maiden Sticks (amulets; a gust), Yuuka's Parasol (float down while
   held), the Sacred Sword of Toyosatomimi and the Miracle Mallet (right-click: stronger for a while).
-- **Grimoire of Alice's weapons:** the **Mochi Hammer** (craftable: diamond, brick, diamond on two
+- **Grimoire of Alice's weapons:** the **Mochi Hammer** (craftable: two diamonds and an ancient debris over two
   sticks; it sends what it hits flying, and weighs you down while you hold it), Momiji's Scimitar, the Sword of Kusanagi, Nue's
   Trident, Elly's Scythe, Amenonuhoko, Nazrin's Dowsing Rod and the Shining Needle.
 - **Held and let go:** the Mini-Hakkero (Master Spark), Tengu's Fan (a gust), the Nuclear Control
@@ -38,18 +39,31 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
   (never runs dry), the Illness Recovery Charm.
 - **Point items:** the Doll Point (four of Arcadian Dream's Max Point Items make one), Power and Big Power, Full Power, Extend (an extra life), Bomb (strikes
   everything around), Star, Faith, Cherry, the UFOs and the Time Orb; the Heavenly Peach.
-- **Spell cards:** nine of the original's cards, each cast at what is in sight, for experience levels.
+- **Spell cards:** 71 cards from Touhou Items Mod, SPELLCARD PLUS and Journey To Gensokyo, each
+  cast at what is in sight, for experience levels.
+- **Shots and lasers:** the danmaku items fire their own shot, in a random colour; the lasers fire
+  lines of light.
+- **The rest of the items:** the Hoshiguma dishes, Hina's dolls, Journey To Gensokyo's ingots,
+  dusts and notes, and Grimoire of Alice's masks (each gives an effect once you are levelled up
+  enough), shields, foods and materials. The Fire-Rat Robe keeps you from burning, the Kappa Cap
+  lets you breathe underwater.
+- **Blocks:** the danmaku and laser crafting tables, the divine spirits, Grimoire of Alice's blocks
+  and the Onbashira pillar, and Journey To Gensokyo's ores: gensokium in the Overworld, makaiium in
+  the Nether and celestium in the End.
 - **The Giga Torch:** Torchmaster's Mega Torch (by Xalcon, MIT). Placed, it stops monsters,
   phantoms, the Touhou Mobs and Arcadian Dream fairies, and village sieges, within 64 blocks.
   Craft it from a torch, two logs, two diamonds and four **Max Doll Points** (four Doll Points in
   a square make one).
 
-The Mochi Hammer, the Max Doll Point and the Giga Torch have recipes; the rest are in the creative
-tabs, and the point and power items drop from Touhou Mobs.
+About 190 of the originals' recipes are carried over, with the Mochi Hammer, Max Doll Point and Giga
+Torch ones; everything is in the creative tabs (Items, Spell Cards and Blocks), and the point and
+power items drop from Touhou Mobs.
 
 ## Building
 
-`gen_content.py` builds the content mod from the original jars' art (not in this repository):
+`gen_content.py` builds the content mod from the original jars' art (not in this repository), with
+`gen_more.py` (the remaining items, blocks, ores and recipes) and `gen_cards.json` (the translated
+spell cards):
 
 ```
 python3 gen_content.py <unpacked thKaguyaMod jar> content <unpacked Grimoire of Alice jar>

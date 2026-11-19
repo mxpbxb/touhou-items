@@ -83,6 +83,29 @@ pub fn shot(form: u8, color: u8, delay: i32, end: i32, special: i32) -> ShotData
     shot_full(form, color, SIZE[f], DAMAGE[f], delay, end, special)
 }
 
+/// What a laser is: none, one that grows as it flies (`EntityTHLaser`), or one held by something
+/// (`EntityTHSetLaser`), which the server keeps where its holder is.
+pub mod laser {
+    pub const NONE: u8 = 0;
+    pub const FREE: u8 = 1;
+    pub const SET: u8 = 2;
+}
+
+/// What a set laser is held by.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum Anchor {
+    #[default]
+    None,
+    /// A living thing, by entity id.
+    Entity(u32),
+    /// One of the things a card set going (`NewE`), by its id.
+    Helper(u32),
+    /// Another shot, by id.
+    Shot(u32),
+    /// The spell card itself: where it floats.
+    Card(V3),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shot {
     pub id: u32,
@@ -111,7 +134,44 @@ pub struct Shot {
     pub ticks: i32,
     /// `animationCount`: below zero while it waits out its delay, then its age.
     pub count: i32,
-    last_time: i32,
+    pub last_time: i32,
+    /// `rotationYaw` and `rotationPitch`, as the shot's own `updateAngle` keeps them.
+    pub yaw: f32,
+    pub pitch: f32,
+    /// `shotSpeed`: the speed it was fired at, or last set to.
+    pub first_speed: f64,
+    pub delay: i32,
+    /// A laser's kind, and its length now and at most.
+    pub laser: u8,
+    pub length: f64,
+    pub max_length: f64,
+    // ---- The server's own: never sent ----
+    /// Its user, by entity id.
+    pub owner: u32,
+    pub by_player: bool,
+    /// Gone at the end of this tick (`setDead`).
+    pub dead: bool,
+    /// Changed by a card's script: clients must be told again.
+    pub dirty: bool,
+    /// What a set laser is held by, how far along its way from it, and how far above.
+    pub anchor: Anchor,
+    pub set_length: f64,
+    pub y_offset: f64,
+    /// What a homing shot follows (`EntityMusouFuuin.target`), by entity id.
+    pub target: u32,
+    /// Ticks it stays still for, in stopped time (Sakuya's watch).
+    pub frozen: u8,
+}
+
+/// What a tick's first half found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    /// Its time is up.
+    Gone,
+    /// Still appearing: it does not move or hit.
+    Waiting,
+    /// It moves: a script may steer it before it does.
+    Moving,
 }
 
 impl Shot {
@@ -129,7 +189,7 @@ impl Shot {
         gravity: V3,
         data: ShotData,
     ) -> Shot {
-        Shot {
+        let mut s = Shot {
             id: 0,
             pos,
             prev: pos,
@@ -151,7 +211,25 @@ impl Shot {
             ticks: 0,
             count: -data.delay,
             last_time: 0,
-        }
+            yaw: 0.0,
+            pitch: 0.0,
+            first_speed,
+            delay: data.delay,
+            laser: laser::NONE,
+            length: 0.0,
+            max_length: 0.0,
+            owner: 0,
+            by_player: false,
+            dead: false,
+            dirty: false,
+            anchor: Anchor::None,
+            set_length: 0.0,
+            y_offset: 0.0,
+            target: 0,
+            frozen: 0,
+        };
+        s.face_angle();
+        s
     }
 
     pub fn speed(&self) -> f64 {
@@ -166,30 +244,51 @@ impl Shot {
     /// One tick of `EntityTHShot.onUpdate`, without the hit test, which the server makes after it
     /// along the way the shot went. False once the shot has had its time.
     pub fn step(&mut self) -> bool {
+        match self.begin() {
+            Phase::Gone => false,
+            Phase::Waiting => true,
+            Phase::Moving => {
+                self.special_motion();
+                self.finish();
+                true
+            }
+        }
+    }
+
+    /// The tick up to its special movement: turning and speeding up.
+    pub fn begin(&mut self) -> Phase {
         self.ticks += 1;
         self.prev = self.pos;
-        if self.count > self.end {
-            return false;
+        if self.dead || self.count > self.end {
+            return Phase::Gone;
         }
         if self.count < 0 {
             self.count += 1;
             self.last_time = self.ticks;
-            return true;
+            return Phase::Waiting;
         }
         self.count = self.last_time;
         if self.rot_speed != 0.0 {
-            self.angle = rotate(self.rotate, self.angle, self.rot_speed);
-            self.motion = self.angle * self.speed();
+            self.set_rotation_yaw(self.rot_speed);
         }
+        self.face_motion();
         self.accelerate();
-        self.special_motion();
+        Phase::Moving
+    }
+
+    /// The tick after its special movement: gravity, then the move.
+    pub fn finish(&mut self) {
         self.motion = self.motion + self.gravity;
         if self.rot_end < self.last_time {
             self.rot_speed = 0.0;
         }
         self.pos = self.pos + self.motion;
         self.last_time = self.ticks;
-        true
+        match self.laser {
+            laser::FREE => self.length = (self.length + self.speed() * 2.0).min(self.max_length),
+            laser::SET => self.length = (self.length + 6.0).min(self.max_length),
+            _ => {}
+        }
     }
 
     /// `shotAcceleration`: towards `limit`, along the way it faces.
@@ -209,7 +308,13 @@ impl Shot {
         }
     }
 
-    fn special_motion(&mut self) {
+    /// `shotAcceleration()`, called by a script.
+    pub fn accelerate_now(&mut self) {
+        self.accelerate();
+    }
+
+    /// The special movements the engine itself knows; a card's own are run by the server.
+    pub fn special_motion(&mut self) {
         match self.special {
             special::FALL => self.motion.y -= 0.02,
             special::FREEZE if self.ticks >= 20 => {
@@ -219,6 +324,72 @@ impl Shot {
             }
             _ => {}
         }
+    }
+
+    /// `updateAngle`: yaw and pitch from the way it moves.
+    fn face_motion(&mut self) {
+        let m = self.motion;
+        if m.x == 0.0 && m.y == 0.0 && m.z == 0.0 {
+            return;
+        }
+        let f = (m.x * m.x + m.z * m.z).sqrt();
+        self.yaw = (m.x.atan2(m.z) * 180.0 / std::f64::consts::PI) as f32;
+        self.pitch = (m.y.atan2(f) * 180.0 / std::f64::consts::PI) as f32;
+    }
+
+    /// `updateYawAndPitch`: yaw and pitch from the way it faces.
+    fn face_angle(&mut self) {
+        let a = self.angle;
+        let f = (a.x * a.x + a.z * a.z).sqrt();
+        self.yaw = (a.x.atan2(a.z) * 180.0 / std::f64::consts::PI) as f32;
+        self.pitch = (a.y.atan2(f) * 180.0 / std::f64::consts::PI) as f32;
+    }
+
+    pub fn update_angle(&mut self) {
+        self.face_motion();
+    }
+
+    /// `setShotRotationYaw`: turns its facing about its axis, and its motion with it.
+    pub fn set_rotation_yaw(&mut self, degrees: f32) {
+        self.angle = rotate(self.rotate, self.angle, degrees);
+        self.update_motion();
+    }
+
+    /// `updateMotion`: its speed, along the way it faces.
+    pub fn update_motion(&mut self) {
+        let speed = self.speed();
+        self.motion = self.angle * speed;
+    }
+
+    /// `setVector`: faces the way its yaw and pitch say.
+    pub fn set_vector(&mut self) {
+        let (y, p) = (f64::from(self.yaw / 180.0 * std::f32::consts::PI), f64::from(self.pitch / 180.0 * std::f32::consts::PI));
+        self.angle = v3(y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
+        self.update_motion();
+    }
+
+    pub fn set_speed(&mut self, speed: f64) {
+        self.first_speed = speed;
+        self.motion = self.angle * speed;
+    }
+
+    pub fn set_pos(&mut self, x: f64, y: f64, z: f64) {
+        self.pos = v3(x, y, z);
+    }
+
+    /// `bound`, in short: back the way it came, slowed, on the axis it struck along. Its count of
+    /// bounces is not kept.
+    pub fn bound(&mut self, rate: f64, _count: i32) {
+        let m = self.motion;
+        let (ax, ay, az) = (m.x.abs(), m.y.abs(), m.z.abs());
+        if ay >= ax && ay >= az {
+            self.motion.y *= -rate;
+        } else if ax >= az {
+            self.motion.x *= -rate;
+        } else {
+            self.motion.z *= -rate;
+        }
+        self.angle = self.motion.normalize();
     }
 
     /// Its damage, as `getShotDamageWithDifficulty` gives a mob's: a player's shot does its own.
@@ -235,7 +406,7 @@ impl Shot {
 
     // ---- On the wire: a client is told a shot once, as it is fired ----
 
-    pub const WIRE: usize = 4 + 3 * 8 + 3 * 4 * 5 + 4 * 8 + 2 + 4 * 2;
+    pub const WIRE: usize = 4 + 3 * 8 + 3 * 4 * 5 + 4 * 8 + 3 + 4 * 3;
 
     pub fn encode(&self, out: &mut Vec<u8>) {
         out.extend(self.id.to_le_bytes());
@@ -250,7 +421,7 @@ impl Shot {
         for v in [v3(self.limit, self.accel, 0.0)] {
             out.extend((v.x as f32).to_le_bytes());
             out.extend((v.y as f32).to_le_bytes());
-            out.extend(0f32.to_le_bytes());
+            out.extend((self.length as f32).to_le_bytes());
         }
         out.extend(self.rot_speed.to_le_bytes());
         out.extend(self.rot_end.to_le_bytes());
@@ -260,9 +431,10 @@ impl Shot {
         out.extend(self.special.to_le_bytes());
         out.extend(self.ticks.to_le_bytes());
         out.extend(self.count.to_le_bytes());
-        out.extend([self.form, self.color]);
+        out.extend([self.form, self.color, self.laser]);
         out.extend(self.last_time.to_le_bytes());
-        out.extend(0u32.to_le_bytes());
+        out.extend((self.max_length as f32).to_le_bytes());
+        out.extend(self.yaw.to_le_bytes());
     }
 
     pub fn decode(data: &[u8]) -> Option<(Shot, &[u8])> {
@@ -273,7 +445,7 @@ impl Shot {
         for v in &mut vecs {
             *v = v3(f64::from(r.f32()?), f64::from(r.f32()?), f64::from(r.f32()?));
         }
-        let (limit, accel, _) = (f64::from(r.f32()?), f64::from(r.f32()?), r.f32()?);
+        let (limit, accel, length) = (f64::from(r.f32()?), f64::from(r.f32()?), f64::from(r.f32()?));
         let rot_speed = r.f32()?;
         let rot_end = r.i32()?;
         let size = r.f32()?;
@@ -284,8 +456,10 @@ impl Shot {
         let count = r.i32()?;
         let form = r.u8()?;
         let color = r.u8()?;
+        let laser = r.u8()?;
         let last_time = r.i32()?;
-        let _ = r.u32()?;
+        let max_length = f64::from(r.f32()?);
+        let yaw = r.f32()?;
         let [motion, angle, rotate, gravity] = vecs;
         let shot = Shot {
             id,
@@ -309,6 +483,22 @@ impl Shot {
             ticks,
             count,
             last_time,
+            yaw,
+            pitch: 0.0,
+            first_speed: 0.0,
+            delay: 0,
+            laser,
+            length,
+            max_length,
+            owner: 0,
+            by_player: false,
+            dead: false,
+            dirty: false,
+            anchor: Anchor::None,
+            set_length: 0.0,
+            y_offset: 0.0,
+            target: 0,
+            frozen: 0,
         };
         Some((shot, r.0))
     }
