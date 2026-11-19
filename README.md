@@ -58,7 +58,8 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
 - **The Giga Torch:** Torchmaster's Mega Torch (by Xalcon, MIT). Placed, it stops monsters,
   phantoms, the Touhou Mobs and Arcadian Dream fairies, and village sieges, within 64 blocks.
   Craft it from a torch, two logs, two diamonds and four **Max Doll Points** (four Doll Points in
-  a square make one).
+  a square make one). It drops itself however it is broken: by hand, with any tool or in an
+  explosion.
 
 About 190 of the originals' recipes are carried over, with the Mochi Hammer, Max Doll Point and Giga
 Torch ones; everything is in the creative tabs (Items, Spell Cards and Blocks), and the point and

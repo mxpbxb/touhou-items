@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.7.1"
+NS, VERSION = "thkaguyamod", "0.7.2"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -291,7 +291,8 @@ copy(EXTRA / "LICENSE-Torchmaster.txt", out / "LICENSE-Torchmaster.txt")
 write(od / "horizon" / "block" / "gigatorch.json", {
     # Glass: no tool needed, lets skylight through and occludes nothing, as Torchmaster's block.
     "template": "minecraft:glass",
-    "properties": {"hardness": 1.0, "explosion_resistance": 1.0, "sounds": "minecraft:oak_planks", "light": 15},
+    "properties": {"hardness": 1.0, "explosion_resistance": 1.0, "sounds": "minecraft:oak_planks", "light": 15,
+                   "requires_tool": False},
     "shapes": {"default": [[0.375, 0, 0.375, 0.625, 1, 0.625]]},
     "item": True,
 })
@@ -308,8 +309,8 @@ write(oa / "models" / "item" / "gigatorch.json", {"parent": f"{NS}:block/gigator
 write(oa / "items" / "gigatorch.json", {"model": {"type": "minecraft:model", "model": f"{NS}:block/gigatorch"}})
 write(oa / "blockstates" / "gigatorch.json", {"variants": {"": {"model": f"{NS}:block/gigatorch"}}})
 write(od / "loot_table" / "blocks" / "gigatorch.json", {"type": "minecraft:block", "pools": [{
-    "rolls": 1, "entries": [{"type": "minecraft:item", "name": f"{NS}:gigatorch"}],
-    "conditions": [{"condition": "minecraft:survives_explosion"}]}]})
+    # Dropped whatever breaks it: by hand, any tool, an explosion.
+    "rolls": 1, "entries": [{"type": "minecraft:item", "name": f"{NS}:gigatorch"}]}]})
 write(out / "data" / "minecraft" / "tags" / "block" / "mineable" / "axe.json", {"replace": False, "values": [f"{NS}:gigatorch"]})
 lang[f"block.{NS}.gigatorch"] = "Giga Torch"
 lang[f"item.{NS}.gigatorch"] = "Giga Torch"
