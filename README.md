@@ -40,7 +40,9 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
 - **Point items:** the Doll Point (four of Arcadian Dream's Max Point Items make one), Power and Big Power, Full Power, Extend (an extra life), Bomb (strikes
   everything around), Star, Faith, Cherry, the UFOs and the Time Orb; the Heavenly Peach.
 - **Spell cards:** 71 cards from Touhou Items Mod, SPELLCARD PLUS and Journey To Gensokyo, each
-  cast at what is in sight, for experience levels.
+  cast at what is in sight, for experience levels. As in the original, a card needs a target: look
+  at a mob (or near one) to declare it; with none in sight it isn't cast, and costs nothing. Once
+  declared it goes on at its target to the end, even after the target dies.
   A spell card does half the damage it did in the original. **Limited cards** (Stardust Reverie,
   Fantasy Seal, Agni Shine, Mesh of Light and Darkness, Flower Wind Moon and Tail Fin Slap) cast as their card does, levels and all, but wear out after 16 casts; the dolls of
   [Alice Dolls Restringed](https://github.com/mxpbxb/alice-dolls-restringed) give them for a bomb.

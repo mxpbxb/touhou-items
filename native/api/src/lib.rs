@@ -70,6 +70,9 @@ struct Cast {
     /// Ticks it lasts: a translated card may change it (`setEndTime`).
     end: i32,
     target: Option<u32>,
+    /// The target as last seen: once it dies a card goes on at it, as the original's keeps its
+    /// `EntityLivingBase` (a script's `target != null` stays true).
+    last_target: Option<Ent>,
     target_point: V3,
     card_pos: V3,
     card_yaw: f32,
@@ -226,13 +229,33 @@ fn find_target(host: &mut dyn Host, p: &NativeServerPlayer) -> Option<(u32, V3)>
     let user = actor(p);
     let eye = user.pos + v3(0.0, user.eye_height, 0.0);
     let look = user.look();
-    bodies(host, &p.dimension)
-        .into_iter()
-        .filter(|(id, kind, _)| *id != p.entity_id as u32 && !passive(kind))
-        .filter_map(|(id, _, b)| Some((ray_box(eye, look, TARGET_RANGE, grow(b, 0.3))?, id, b)))
+    let all: Vec<_> = bodies(host, &p.dimension).into_iter().filter(|(id, kind, _)| *id != p.entity_id as u32 && !passive(kind)).collect();
+    let looked_at = all
+        .iter()
+        .filter_map(|(id, _, b)| Some((ray_box(eye, look, TARGET_RANGE, grow(*b, 0.3))?, *id, *b)))
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, id, b)| (id, middle(b)))
+        .map(|(_, id, b)| (id, middle(b)));
+    looked_at.or_else(|| {
+        // Not one exactly: the nearest to the line of sight within AIM_CONE, of the hostile ones
+        // (no player, and no one's doll).
+        all.iter()
+            .filter(|(_, kind, _)| kind != "minecraft:player" && !kind.starts_with("alice_dolls:"))
+            .filter_map(|(id, _, b)| {
+                let to = middle(*b) - eye;
+                let d = to.length();
+                if !(0.5..=TARGET_RANGE).contains(&d) {
+                    return None;
+                }
+                let cos = (to.x * look.x + to.y * look.y + to.z * look.z) / d;
+                (cos >= AIM_CONE.cos()).then_some((cos, *id, *b))
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, id, b)| (id, middle(b)))
+    })
 }
+
+/// How far off the line of sight (radians) a spell card still finds its target.
+const AIM_CONE: f64 = 0.26;
 
 pub(crate) fn passable(block: &str) -> bool {
     const SOFT: [&str; 30] = [
@@ -448,6 +471,7 @@ impl Server {
                 let e = w.ent(id);
                 if e.present && e.living && !e.dead {
                     cast.target_point = v3(e.x, e.y + f64::from(e.height) / 2.0, e.z);
+                    cast.last_target = Some(e);
                     target = Some(e);
                 }
             }
@@ -482,12 +506,9 @@ impl Server {
                 }
                 Script::Gen(info, state) => {
                     let user = w.ent(cast.user_entity);
-                    let aim = target.unwrap_or(Ent {
-                        x: cast.target_point.x,
-                        y: cast.target_point.y,
-                        z: cast.target_point.z,
-                        ..Ent::NONE
-                    });
+                    let aim = target
+                        .or(cast.last_target.map(|e| Ent { dead: true, ..e }))
+                        .unwrap_or(Ent { x: cast.target_point.x, y: cast.target_point.y, z: cast.target_point.z, ..Ent::NONE });
                     let seed = u64::from(rng.int(u32::MAX));
                     let mut cx = Cx::new(&mut w, user, aim, cast.card_pos, seed);
                     cx.time = cast.time;
@@ -681,6 +702,10 @@ impl Hooks for Mod {
             return Flow::Cancel;
         }
         let creative = player.game_mode == 1;
+        let Some((target, target_point)) = find_target(host, &player) else {
+            host.action_bar(player.uuid, Text::literal(format!("{name}: no target in sight")));
+            return Flow::Cancel;
+        };
         if !creative {
             if player.xp_level < need_level {
                 host.action_bar(player.uuid, Text::literal(format!("{name} needs {need_level} levels")));
@@ -691,10 +716,7 @@ impl Hooks for Mod {
             host.set_player_status(player.uuid, None, None, Some((level, progress, total_xp(level, progress))));
         }
         let user = actor(&player);
-        let (target, target_point) = match find_target(host, &player) {
-            Some((id, at)) => (Some(id), at),
-            None => (None, user.pos + v3(0.0, user.eye_height, 0.0) + user.look() * 16.0),
-        };
+        let target = Some(target);
         server.casts.push(Cast {
             script,
             user: player.uuid,
@@ -704,6 +726,7 @@ impl Hooks for Mod {
             level: 2,
             end,
             target,
+            last_target: None,
             target_point,
             card_pos: card_position(&user),
             card_yaw: user.yaw,

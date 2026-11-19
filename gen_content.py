@@ -14,7 +14,7 @@ from pathlib import Path
 
 jar, out = Path(sys.argv[1]), Path(sys.argv[2])
 grimoire = Path(sys.argv[3]) / "assets" / "grimoireofalice" / "textures" / "items" if len(sys.argv) > 3 else None
-NS, VERSION = "thkaguyamod", "0.7.0"
+NS, VERSION = "thkaguyamod", "0.7.1"
 src = jar / "assets" / NS / "textures"
 if out.exists():
     shutil.rmtree(out)
@@ -48,6 +48,14 @@ def write(path, value):
 def copy(a, b):
     b.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(a, b)
+
+
+def copy_meta(a, b):
+    """An animation's .mcmeta, as clean JSON: some of the originals' have trailing commas, which
+    1.7.10's lenient reader took and today's doesn't."""
+    import re
+    text = re.sub(r",(\s*[\]}])", r"\1", Path(a).read_text(encoding="utf-8-sig"))
+    write(b, json.loads(text))
 
 
 for name, file in SHEETS.items():
@@ -228,7 +236,7 @@ for item, texture, name, template, components in ITEMS:
     copy(folder / f"{texture}.png", oa / "textures" / "item" / f"{item}.png")
     meta = folder / f"{texture}.png.mcmeta"
     if meta.exists():
-        copy(meta, oa / "textures" / "item" / f"{item}.png.mcmeta")
+        copy_meta(meta, oa / "textures" / "item" / f"{item}.png.mcmeta")
     comps = {"minecraft:item_name": {"translate": f"item.{NS}.{item}"}}
     comps.update(components)
     write(od / "horizon" / "item" / f"{item}.json", {

@@ -2,7 +2,7 @@
 # `horizon-launcher native-build`. Danmaku, spell cards (with SPELLCARD PLUS's and Journey To Gensokyo's), the character items and the Giga Torch (Torchmaster's Mega Torch). Its art is the content mod `thkaguyamod`.
 [mod]
 id = "thkaguyamod_native"
-version = "0.6.0"
+version = "0.6.1"
 
 [compatibility]
 horizon_revision = "1fe4e6fe0252c44efd41d882daee0468389f7d5f"

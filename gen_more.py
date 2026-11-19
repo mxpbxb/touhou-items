@@ -227,7 +227,7 @@ for entry in MORE:
         copy(p, oa / "textures" / "item" / f"{item}{suffix}.png")
         meta = p.with_name(p.name + ".mcmeta")
         if meta.exists():
-            copy(meta, oa / "textures" / "item" / f"{item}{suffix}.png.mcmeta")
+            copy_meta(meta, oa / "textures" / "item" / f"{item}{suffix}.png.mcmeta")
         model_tex[f"layer{i}"] = f"{NS}:item/{item}{suffix}"
     comps = {"minecraft:item_name": {"translate": f"item.{NS}.{item}"}}
     comps.update(components)
@@ -251,7 +251,7 @@ def block(bid, name, template, props, textures, shape="all", mine="pickaxe", too
         copy(p, oa / "textures" / "block" / f"{bid}_{key}.png")
         meta = p.with_name(p.name + ".mcmeta")
         if meta.exists():
-            copy(meta, oa / "textures" / "block" / f"{bid}_{key}.png.mcmeta")
+            copy_meta(meta, oa / "textures" / "block" / f"{bid}_{key}.png.mcmeta")
     props = dict(props)
     if light is not None:
         props["light"] = light
@@ -332,9 +332,10 @@ for name, target, biomes, count, lo, hi in (
         ("gensokium", {"predicate_type": "minecraft:tag_match", "tag": "minecraft:stone_ore_replaceables"}, "#minecraft:is_overworld", 3, -64, 32),
         ("makaiium", {"predicate_type": "minecraft:block_match", "block": "minecraft:netherrack"}, "#minecraft:is_nether", 8, 0, 128),
         ("celestium", {"predicate_type": "minecraft:block_match", "block": "minecraft:end_stone"}, "#minecraft:is_end", 8, 0, 128)):
-    write(od / "worldgen" / "configured_feature" / f"ore_{name}.json", {"type": "minecraft:ore", "config": {
+    # 26.3's ore feature: its fields beside its type (no "config" any more).
+    write(od / "worldgen" / "configured_feature" / f"ore_{name}.json", {"type": "minecraft:ore",
         "size": 4, "discard_chance_on_air_exposure": 0.0,
-        "targets": [{"target": target, "state": {"Name": f"{NS}:{name}_ore"}}]}})
+        "targets": [{"target": target, "state": {"Name": f"{NS}:{name}_ore"}}]})
     write(od / "worldgen" / "placed_feature" / f"ore_{name}.json", {"feature": f"{NS}:ore_{name}", "placement": [
         {"type": "minecraft:count", "count": count}, {"type": "minecraft:in_square"},
         {"type": "minecraft:height_range", "height": {"type": "minecraft:uniform",
