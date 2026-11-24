@@ -61,8 +61,10 @@ Every weapon takes the enchantments a sword takes, at an enchanting table or an 
   a square make one). It drops itself however it is broken: by hand, with any tool or in an
   explosion.
 
-About 190 of the originals' recipes are carried over, with the Mochi Hammer, Max Doll Point and Giga
-Torch ones; everything is in the creative tabs (Items, Spell Cards and Blocks), and the point and
+The character weapons, masks and hats, treasures and tools, and the spell cards are not crafted:
+the Mochi Hammer is the one weapon with a recipe. The originals' other recipes are carried over (the
+crafting tables, blocks, ingots, pearls, shots, power and point items), with the Max Doll Point and
+Giga Torch ones; everything is in the creative tabs (Items, Spell Cards and Blocks), and the point and
 power items drop from Touhou Mobs.
 
 ## Building

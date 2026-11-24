@@ -676,6 +676,32 @@ gameregistry(SRC / "jtg" / "katrix" / "journeyToGensokyo" / "item" / "crafting" 
 grimoire(SRC / "grimoire" / "arekkuusu" / "grimoireOfAlice" / "item" / "crafting" / "VanillaCrafting.java")
 # The hand-written ones in gen_content win: the Mochi Hammer's own shape stays.
 recipes.pop("mochi_hammer", None)
+# Not crafted: the character weapons, what they wear, their treasures and tools, and every spell
+# card. They are found, not made; the Mochi Hammer (gen_content's) is the one weapon with a recipe.
+UNCRAFTABLE = {
+    "amenonuhoko", "crest_of_yggdrasill", "death_scythe", "elly_scythe", "goa_laevatein", "goa_miko_stick",
+    "hakurei_gohei", "hakurouken", "hisou_sword", "icicle_sword", "kaigo_stick", "laevateinn",
+    "miko_stick", "miracle_mallet", "momiji_scimitar", "nazrin_stick", "nue_trident", "onbashira",
+    "roukanken", "spear_the_gungnir", "sukuna_needle", "sword_of_kusanagi", "toyosatomimi_sword", "yuuka_parasol",
+    "buddha_stone_bowl", "maple_leaf_shield", "primordial_shield", "silver_knife_blue", "silver_knife_green", "silver_knife_red",
+    "fox_mask", "fuku_no_kami_mask", "hannya_mask", "hyottoko_mask", "kappa_cap", "kokoros_masks",
+    "koomote_mask", "marisa_hat", "mask_of_hope", "monkey_mask", "raiden_mask", "suwako_hat",
+    "uba_mask", "fire_rat_robe", "yin_yang_orb_yukari", "mask", "aja_red_stone", "closed_third_eye",
+    "third_eye", "diffusion_amulet", "homing_amulet", "dragon_neck_jewel", "gap", "hoshiguma_dish",
+    "hourai_jeweled_branch", "ibaraki_box_empty", "ibuki_gourd", "instant_hina_doll", "kappa_water_pistol", "kinkakuji",
+    "magic_broom", "mini_hakkero", "nazrin_pendulum", "nuclear_control_rod", "sakuya_watch", "ship_ghost_dipper",
+    "sorcerer_sutra_scroll", "tengu_fan", "wall_passing_chisel", "yin_yang_orb", "youkai_book", "yuyuko_fan",
+    "kappas_nostrum", "swallow_cowrie_shell",
+}
+
+
+def crafted(rid, r):
+    out = r.get("result", {})
+    name = (out.get("id") if isinstance(out, dict) else out or rid).split(":")[-1]
+    return name not in UNCRAFTABLE and not name.startswith("spell_card_")
+
+
+recipes = {rid: r for rid, r in recipes.items() if crafted(rid, r)}
 for rid, r in recipes.items():
     smelt = r.pop("_smelt", False)
     write(od / "recipe" / f"{rid}{'_smelting' if smelt else ''}.json", r)
